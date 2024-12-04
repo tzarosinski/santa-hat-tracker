@@ -1,0 +1,162 @@
+<!-- file: index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Webcam with Santa Hat Filter</title>
+    <style>
+        #video {
+            position: absolute;
+            top: 0;
+            left: 0;
+        }
+        #overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            pointer-events: none;
+        }
+        #controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(255, 255, 255, 0.8);
+            padding: 10px;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <video id="video" width="640" height="480" autoplay></video>
+    <canvas id="overlay" width="640" height="480"></canvas>
+    <div id="controls">
+        <input type="file" id="imageUpload" accept="image/*"><br>
+        X Offset: <input type="range" id="xOffset" min="-100" max="100" value="0"><br>
+        Y Offset: <input type="range" id="yOffset" min="-100" max="100" value="0"><br>
+        Scale: <input type="range" id="scale" min="0.5" max="2" step="0.1" value="1"><br>
+        <button id="snapshot">Take Snapshot</button>
+        <button id="record">Start Recording</button>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/clmtrackr@1.1.2/build/clmtrackr.js"></script>
+    <script>
+        const video = document.getElementById('video');
+        const overlay = document.getElementById('overlay');
+        const overlayCtx = overlay.getContext('2d');
+        const imageUpload = document.getElementById('imageUpload');
+        const xOffsetSlider = document.getElementById('xOffset');
+        const yOffsetSlider = document.getElementById('yOffset');
+        const scaleSlider = document.getElementById('scale');
+        const snapshotButton = document.getElementById('snapshot');
+        const recordButton = document.getElementById('record');
+
+        let santaHat = new Image();
+        let xOffset = 0;
+        let yOffset = 0;
+        let scale = 1;
+        let isRecording = false;
+        let mediaRecorder;
+        let recordedChunks = [];
+
+        // Start video stream
+        navigator.mediaDevices.getUserMedia({ video: true })
+            .then(stream => {
+                video.srcObject = stream;
+            })
+            .catch(err => {
+                console.error("Error accessing webcam: ", err);
+            });
+
+        // Initialize clmtrackr
+        const tracker = new clm.tracker();
+        tracker.init();
+        tracker.start(video);
+
+        // Update offsets and scale
+        xOffsetSlider.addEventListener('input', () => {
+            xOffset = parseInt(xOffsetSlider.value);
+        });
+
+        yOffsetSlider.addEventListener('input', () => {
+            yOffset = parseInt(yOffsetSlider.value);
+        });
+
+        scaleSlider.addEventListener('input', () => {
+            scale = parseFloat(scaleSlider.value);
+        });
+
+        // Handle image upload
+        imageUpload.addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    santaHat.src = e.target.result;
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        // Take snapshot
+        snapshotButton.addEventListener('click', () => {
+            const snapshotCanvas = document.createElement('canvas');
+            snapshotCanvas.width = overlay.width;
+            snapshotCanvas.height = overlay.height;
+            const snapshotCtx = snapshotCanvas.getContext('2d');
+            snapshotCtx.drawImage(video, 0, 0, overlay.width, overlay.height);
+            snapshotCtx.drawImage(overlay, 0, 0);
+            const link = document.createElement('a');
+            link.href = snapshotCanvas.toDataURL('image/png');
+            link.download = 'snapshot.png';
+            link.click();
+        });
+
+        // Start/Stop recording
+        recordButton.addEventListener('click', () => {
+            if (!isRecording) {
+                recordedChunks = [];
+                mediaRecorder = new MediaRecorder(video.srcObject);
+                mediaRecorder.ondataavailable = (event) => {
+                    if (event.data.size > 0) {
+                        recordedChunks.push(event.data);
+                    }
+                };
+                mediaRecorder.onstop = () => {
+                    const blob = new Blob(recordedChunks, { type: 'video/webm' });
+                    const url = URL.createObjectURL(blob);
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.download = 'recording.webm';
+                    link.click();
+                };
+                mediaRecorder.start();
+                recordButton.textContent = 'Stop Recording';
+            } else {
+                mediaRecorder.stop();
+                recordButton.textContent = 'Start Recording';
+            }
+            isRecording = !isRecording;
+        });
+
+        // Draw loop
+        function draw() {
+            requestAnimationFrame(draw);
+            overlayCtx.clearRect(0, 0, overlay.width, overlay.height);
+
+            const positions = tracker.getCurrentPosition();
+            if (positions) {
+                // Forehead landmark (e.g., index 20)
+                const forehead = positions[20];
+                if (forehead && santaHat.complete) {
+                    const width = 100 * scale;
+                    const height = 50 * scale;
+                    overlayCtx.drawImage(santaHat, forehead[0] + xOffset, forehead[1] + yOffset, width, height);
+                }
+            }
+        }
+
+        draw();
+    </script>
+</body>
+</html>
